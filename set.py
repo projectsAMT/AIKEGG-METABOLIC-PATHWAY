@@ -13,6 +13,90 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 import io
 import math
+import csv
+import os
+
+# Initialize CSV storage
+def init_csv_storage():
+    """Initialize or load the CSV storage file"""
+    csv_file = "patient_data.csv"
+    headers = [
+        'timestamp', 'patient_id', 'age', 'gender',
+        # Lab values
+        'glucose', 'lactate', 'pyruvate', 'urea', 'creatinine', 'bun', 'ammonia',
+        'alt', 'ast', 'bilirubin', 'vitamin_d', 'pth', 'tsh', 'cortisol',
+        'insulin', 'c_peptide', 'estrogen', 'progesterone', 'testosterone',
+        'apo_a', 'apo_b', 'total_cholesterol', 'ldl', 'hdl', 'triglycerides',
+        'phosphorus', 'magnesium', 'uric_acid', 'anti_tpo', 'ana', 'anti_ccp',
+        'crp', 'fgf_23', 'homocysteine', 'glutamine', 'glutamate', 'gsh', 'mda',
+        # Analysis results
+        'top_pathway', 'top_score', 'directly_affected_count', 'at_risk_count'
+    ]
+    
+    if not os.path.exists(csv_file):
+        with open(csv_file, mode='w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+    
+    return csv_file
+
+def save_to_csv(csv_file, patient_info, lab_values, analysis_results):
+    """Save patient data and analysis results to CSV"""
+    # Prepare data row
+    data_row = {
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'patient_id': patient_info.get('patient_id', ''),
+        'age': patient_info.get('age', ''),
+        'gender': patient_info.get('gender', ''),
+    }
+    
+    # Add lab values (fill missing with empty string)
+    all_lab_params = [
+        'glucose', 'lactate', 'pyruvate', 'urea', 'creatinine', 'bun', 'ammonia',
+        'alt', 'ast', 'bilirubin', 'vitamin_d', 'pth', 'tsh', 'cortisol',
+        'insulin', 'c_peptide', 'estrogen', 'progesterone', 'testosterone',
+        'apo_a', 'apo_b', 'total_cholesterol', 'ldl', 'hdl', 'triglycerides',
+        'phosphorus', 'magnesium', 'uric_acid', 'anti_tpo', 'ana', 'anti_ccp',
+        'crp', 'fgf_23', 'homocysteine', 'glutamine', 'glutamate', 'gsh', 'mda'
+    ]
+    
+    for param in all_lab_params:
+        data_row[param] = lab_values.get(param, '')
+    
+    # Add analysis results
+    if analysis_results and analysis_results.get('sorted_pathways'):
+        data_row.update({
+            'top_pathway': analysis_results['sorted_pathways'][0][1]['pathway']['name'],
+            'top_score': analysis_results['sorted_pathways'][0][1]['total_score'],
+            'directly_affected_count': len(analysis_results.get('directly_affected', [])),
+            'at_risk_count': len(analysis_results.get('at_risk', []))
+        })
+    else:
+        data_row.update({
+            'top_pathway': '',
+            'top_score': '',
+            'directly_affected_count': '',
+            'at_risk_count': ''
+        })
+    
+    # Write to CSV
+    with open(csv_file, mode='a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=data_row.keys())
+        writer.writerow(data_row)
+
+def load_csv_data(csv_file):
+    """Load all data from CSV into a DataFrame"""
+    if os.path.exists(csv_file):
+        df = pd.read_csv(csv_file)
+        # Convert timestamp to datetime for better sorting
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.sort_values('timestamp', ascending=False)
+        return df
+    return pd.DataFrame()
+
+# Initialize CSV storage
+csv_file = init_csv_storage()
 
 # Remove Streamlit branding and customize appearance
 st.set_page_config(
@@ -1075,6 +1159,7 @@ def get_reference_ranges():
         'von_willebrand_factor': {'min': 50, 'max': 150, 'unit': '%'}
     }
 
+
 def calculate_z_score(value, mean, std):
     return (value - mean) / std
 
@@ -1573,6 +1658,7 @@ def calculate_z_score(value, mean, std):
     if std == 0:
         return 0
     return (value - mean) / std
+
 def get_affected_pathways_analysis(lab_values, metabolic_db, ref_ranges):
     """Analyze which pathways are directly affected and at risk"""
     directly_affected = []
@@ -1745,7 +1831,7 @@ def create_kegg_style_pathway_chart(pathway_data, selected_pathway_id=None):
                     size=40, 
                     color='lightblue', 
                     line=dict(width=2, color='darkblue'),
-                    symbol='circle'  # Explicitly set symbol
+                    symbol='circle'
                 ),
                 text=comp_name.split()[0],
                 textposition="middle center",
@@ -1763,7 +1849,7 @@ def create_kegg_style_pathway_chart(pathway_data, selected_pathway_id=None):
                     size=35, 
                     color='lightgreen', 
                     line=dict(width=2, color='darkgreen'),
-                    symbol='square'  # Explicitly set symbol
+                    symbol='square'
                 ),
                 text=f"E{i+1}",
                 textposition="middle center",
@@ -1787,7 +1873,7 @@ def create_kegg_style_pathway_chart(pathway_data, selected_pathway_id=None):
             
             # Line from enzyme to next compound
             if i+1 < len(compound_positions):
-                arrow_symbol = 'triangle-right' if rxn_type == 'irreversible' else 'circle'  # Changed to valid symbol
+                arrow_symbol = 'triangle-right' if rxn_type == 'irreversible' else 'circle'
                 fig.add_trace(go.Scatter(
                     x=[enz_pos[0], pos2[0]], y=[enz_pos[1], pos2[1]],
                     mode='lines+markers',
@@ -1846,11 +1932,11 @@ def create_pathway_overview_network(pathway_data):
         'Inflammatory Diseases': '#F59E0B',
         'Autoimmune Diseases': '#10B981',
         'Oxidative Stress': '#F97316',
-        'Metabolic Syndrome': '#8B5CF6',  # Added this
-        'Urea Cycle Disorders': '#EC4899',  # Added this
-        'Phenylketonuria': '#14B8A6',  # Added this
-        'Porphyria': '#F43F5E',  # Added this
-        'Gout': '#0EA5E9'  # Added this
+        'Metabolic Syndrome': '#8B5CF6',
+        'Urea Cycle Disorders': '#EC4899',
+        'Phenylketonuria': '#14B8A6',
+        'Porphyria': '#F43F5E',
+        'Gout': '#0EA5E9'
     }
     
     # Position diseases in clusters
@@ -1863,11 +1949,11 @@ def create_pathway_overview_network(pathway_data):
         'Inflammatory Diseases': (1.5, -2),
         'Autoimmune Diseases': (4, -2),
         'Oxidative Stress': (-1, -1),
-        'Metabolic Syndrome': (2, -1),  # Added this
-        'Urea Cycle Disorders': (-1, 2),  # Added this
-        'Phenylketonuria': (4, 1.5),  # Added this
-        'Porphyria': (-2, -1),  # Added this
-        'Gout': (3, -1.5)  # Added this
+        'Metabolic Syndrome': (2, -1),
+        'Urea Cycle Disorders': (-1, 2),
+        'Phenylketonuria': (4, 1.5),
+        'Porphyria': (-2, -1),
+        'Gout': (3, -1.5)
     }
     
     # Add disease clusters
@@ -1906,7 +1992,7 @@ def create_pathway_overview_network(pathway_data):
                 textfont=dict(size=8),
                 name=disease,
                 hovertext=f"{data['pathway']['name']}<br>Score: {data['total_score']:.2f}<br>Click for detailed view",
-                showlegend=i == 0  # Only show legend for first pathway of each disease
+                showlegend=i == 0
             ))
     
     # Add connections between related pathways
@@ -1935,6 +2021,7 @@ def create_pathway_overview_network(pathway_data):
     )
     
     return fig
+
 def display_pathway_details(pathway_data, pathway_id):
     """Display detailed information about a specific pathway"""
     data = pathway_data[pathway_id]
@@ -2197,8 +2284,6 @@ def create_pathway_table(sorted_pathways, directly_affected, at_risk):
     
     return table_data
 
-
-
 def main():
     st.title("🧬 AIKEGG - AI-Enhanced Metabolic Pathway Analysis")
     st.markdown("Advanced AI platform that maps patient biochemical data to KEGG metabolic pathways for precision diagnostics")
@@ -2251,11 +2336,9 @@ def main():
             lipoprotein_a = st.number_input("Lipoprotein(a) (mg/dL)", min_value=0.0, value=None, step=0.1)
         
         with st.expander("⚡ Minerals & Electrolytes"):
-        
             phosphorus = st.number_input("Phosphorus (mg/dL)", min_value=0.0, value=None, step=0.1)
             magnesium = st.number_input("Magnesium (mg/dL)", min_value=0.0, value=None, step=0.01)
             uric_acid = st.number_input("Uric Acid (mg/dL)", min_value=0.0, value=None, step=0.1)
-
         
         with st.expander("🛡️ Immune Markers"):
             anti_tpo = st.number_input("Anti-TPO (IU/mL)", min_value=0.0, value=None, step=0.1)
@@ -2327,10 +2410,10 @@ def main():
             at_risk = results['at_risk']
             patient_info = results['patient_info']
             
-            tab1, tab2, tab3, tab4, tab5, tab6  = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
                 "Overview", "Affected Pathways", "Pathway Details", 
-                "Network View", "Thermodynamics & Flux", "Enhanced Report"
-                
+                "Network View", "Thermodynamics & Flux", "Enhanced Report",
+                "Patient Database"
             ])
             
             with tab1:
@@ -2578,6 +2661,60 @@ def main():
                         )
                     except Exception as e:
                         st.error(f"PDF generation failed. Install reportlab: pip install reportlab")
-        
+                
+                with col_actions:
+                    # Save to CSV button
+                    if st.button("💾 Save to Database", help="Save this patient's data to the permanent database"):
+                        save_to_csv(csv_file, patient_info, lab_values, results)
+                        st.success("Patient data saved to database!")
+            
+            with tab7:
+                st.subheader("📊 Patient Database")
+                st.info("View and search all historical patient records")
+                
+                # Load and display CSV data
+                try:
+                    df = load_csv_data(csv_file)
+                    
+                    if df.empty:
+                        st.warning("No patient data found in the database.")
+                    else:
+                        # Search functionality
+                        col_search1, col_search2 = st.columns(2)
+                        with col_search1:
+                            search_term = st.text_input("Search by Patient ID", "")
+                        with col_search2:
+                            date_filter = st.date_input("Filter by date range", [])
+                        
+                        # Apply filters
+                        if search_term:
+                            df = df[df['patient_id'].str.contains(search_term, case=False, na=False)]
+                        
+                        if date_filter:
+                            if isinstance(date_filter, list) and len(date_filter) == 2:
+                                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                                df = df[(df['timestamp'].dt.date >= date_filter[0]) & 
+                                       (df['timestamp'].dt.date <= date_filter[1])]
+                        
+                        # Display data
+                        st.dataframe(df, use_container_width=True, height=600)
+                        
+                        # Download options
+                        csv_data = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv_data,
+                            file_name="AIKEGG_patient_database.csv",
+                            mime="text/csv"
+                        )
+                        
+                        # Show basic stats
+                        st.write(f"Total records: {len(df)}")
+                        if not df.empty:
+                            st.write(f"Last entry: {df['timestamp'].iloc[0].strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                except Exception as e:
+                    st.error(f"Error loading database: {str(e)}")
+
 if __name__ == "__main__":
     main()
